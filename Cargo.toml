@@ -1,0 +1,27 @@
+[package]
+name = "toy_vo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.102"
+camera-intrinsic-model = "0.8.1"
+image = { version = "0.25", default-features = false, features = ["png"] }
+log = "0.4.29"
+nalgebra = "0.34"
+# ndarray = "0.17.2"
+patch-tracker = "0.4.0"
+# ort = { version = "2.0.0-rc.12", features = ["coreml"] }
+rand = "0.10.1"
+rayon = "1.12.0"
+serde = "1"
+serde_json = "1"
+sqpnp_simple = "0.2.0"
+tiny-solver = "0.18.0"
+
+[dev-dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+env_logger = "0.11.10"
+fastrand = "2.4.1"
+glob = "0.3.3"
+rerun = "0.32"
