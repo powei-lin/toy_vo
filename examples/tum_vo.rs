@@ -184,7 +184,7 @@ fn main() -> anyhow::Result<()> {
     for (i, (left_img_path, right_img_path)) in
         camera_images[0].iter().zip(&camera_images[1]).enumerate()
     {
-        if i > 1 {
+        if i > 105 {
             break;
         }
         let timestamp_ns = left_img_path
@@ -299,7 +299,7 @@ fn main() -> anyhow::Result<()> {
             &rerun::Points3D::new(points).with_colors(colors),
         )
         .unwrap();
-        log_pose(&rec, &estimator.current_pose, "/current_pose");
+        log_pose(&rec, &estimator.current_t_w_cam0, "/current_pose");
 
         //     // Keyframe poses — get_keyframe_poses() now returns T_W_Cl for each frame
         //     let system_poses = estimator.sliding_window.get_keyframe_poses();
