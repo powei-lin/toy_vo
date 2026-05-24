@@ -2,7 +2,14 @@
 name = "toy-vo"
 version = "0.1.0"
 edition = "2024"
+authors = ["Powei Lin <poweilin1994@gmail.com>"]
 exclude = ["configs", "examples", "docs"]
+license = "GPL-2.0-or-later"
+description = "A very simple stereo visual odometry library"
+homepage = "https://github.com/powei-lin/toy_vo"
+repository = "https://github.com/powei-lin/toy_vo"
+keywords = ["visual odometry", "robotics"]
+categories = ["data-structures", "science", "mathematics"]
 
 [lib]
 crate-type = ["lib", "cdylib"]
