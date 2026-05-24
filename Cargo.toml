@@ -2,7 +2,7 @@
 name = "toy-vo"
 version = "0.1.0"
 edition = "2024"
-exclude = ["configs", "examples"]
+exclude = ["configs", "examples", "docs"]
 
 [lib]
 crate-type = ["lib", "cdylib"]
