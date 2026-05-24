@@ -17,3 +17,12 @@ python3 examples/run_stereo.py -d {your_path/V1_01_easy} -c configs/euroc --reru
 git clone https://github.com/powei-lin/toy_vo.git && cd toy_vo
 cargo run -r --example run_stereo -- -d {your_path/dataset-corridor4_512_16} -c configs/tum_vi --rerun
 ```
+
+## Acknowledgements
+Thanks all the auther of these libraries.
+- [basalt](https://gitlab.com/VladyslavUsenko/basalt)
+- [faer](https://codeberg.org/sarah-quinones/faer)
+- [nalgebra](https://github.com/dimforge/nalgebra)
+- [rerun](https://github.com/rerun-io/rerun)
+
+And thanks [Hossam R.](https://github.com/jumpinthefire) for implementing the LM method in [tiny-solver](https://github.com/powei-lin/tiny-solver-rs).
