@@ -195,8 +195,20 @@ impl PyStereoEstimator {
             .map(|&v| v as f32)
             .collect();
 
-        let cam0_model = build_generic_model(&cam0_mat, &cam0_dist, cam0_model_name, cam0_width, cam0_height)?;
-        let cam1_model = build_generic_model(&cam1_mat, &cam1_dist, cam1_model_name, cam1_width, cam1_height)?;
+        let cam0_model = build_generic_model(
+            &cam0_mat,
+            &cam0_dist,
+            cam0_model_name,
+            cam0_width,
+            cam0_height,
+        )?;
+        let cam1_model = build_generic_model(
+            &cam1_mat,
+            &cam1_dist,
+            cam1_model_name,
+            cam1_width,
+            cam1_height,
+        )?;
 
         // Parse extrinsics
         let rvec_arr = t_cam1_cam0_rvec.as_array();

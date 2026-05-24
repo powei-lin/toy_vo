@@ -6,7 +6,7 @@ use camera_intrinsic_model::io::model_from_json;
 use clap::Parser;
 use glob::glob;
 use nalgebra as na;
-use toy_vo::estimator::{StereoEstimator, EstimatorParameters};
+use toy_vo::estimator::{EstimatorParameters, StereoEstimator};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -239,7 +239,11 @@ fn main() -> anyhow::Result<()> {
         left_cam_model.cast(),
         right_cam_model.cast(),
         t_cam1_cam0,
-        Some(EstimatorParameters::default()),
+        Some(EstimatorParameters {
+            tracker_optical_flow_levels: 6,
+            tracker_grid_size: 40,
+            ..Default::default()
+        }),
     );
     let (rec, camera_frustum) = if cli.rerun {
         (
@@ -313,7 +317,7 @@ fn main() -> anyhow::Result<()> {
             );
             log_pose(
                 &rec,
-                &(estimator.current_t_w_cam0 * t_cam1_cam0),
+                &(estimator.current_t_w_cam0 * t_cam1_cam0.inverse()),
                 "/current_pose/right",
                 0.4,
                 camera_frustum.clone(),

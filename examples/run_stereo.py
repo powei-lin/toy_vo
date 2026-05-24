@@ -270,7 +270,7 @@ def main():
 
     # Load extrinsics
     rvec, tvec = load_extrinsics(f"{args.config_folder}/extrinsics.json")
-    t_cam1_cam0_4x4 = rvec_tvec_to_4x4(rvec, tvec)
+    t_cam0_cam1_4x4 = np.linalg.inv(rvec_tvec_to_4x4(rvec, tvec))
 
     # Create estimator
     estimator = StereoEstimator(
@@ -361,7 +361,7 @@ def main():
             )
 
             # Log current pose (right) = T_w_cam0 @ T_cam1_cam0
-            t_w_cam1 = estimator.current_pose @ t_cam1_cam0_4x4
+            t_w_cam1 = estimator.current_pose @ t_cam0_cam1_4x4
             log_pose(
                 t_w_cam1,
                 "/current_pose/right",
