@@ -6,7 +6,7 @@ use camera_intrinsic_model::io::model_from_json;
 use clap::Parser;
 use glob::glob;
 use nalgebra as na;
-use toy_stereo_vo::estimator::{Estimator, EstimatorParameters};
+use toy_vo::estimator::{StereoEstimator, EstimatorParameters};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -235,7 +235,7 @@ fn main() -> anyhow::Result<()> {
     let right_cam_model = model_from_json(&format!("{}/cam1.json", config_folder));
     let t_cam1_cam0 = rtvec_from_json(&format!("{}/extrinsics.json", config_folder)).to_isometry3();
 
-    let mut estimator = Estimator::new(
+    let mut estimator = StereoEstimator::new(
         left_cam_model.cast(),
         right_cam_model.cast(),
         t_cam1_cam0,

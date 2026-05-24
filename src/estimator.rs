@@ -72,7 +72,7 @@ impl Default for EstimatorParameters {
 }
 
 /// Tracks stereo features, maintains landmarks, and estimates camera motion over time.
-pub struct Estimator {
+pub struct StereoEstimator {
     frame_id_counter: u64,
     frames_since_last_keyframe: u64,
     pub tracker: StereoPatchTracker,
@@ -92,7 +92,7 @@ pub struct Estimator {
     pub params: EstimatorParameters, // Store the parameters used by the estimator
 }
 
-impl Estimator {
+impl StereoEstimator {
     /// Creates a stereo visual odometry estimator from calibrated cameras and an optional parameter set.
     pub fn new(
         cam0: GenericModel<f32>,
