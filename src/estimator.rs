@@ -48,6 +48,16 @@ pub fn triangulate_points(
     na::Point3::from(p3d.transpose().fixed_rows::<3>(0).into_owned())
 }
 
+pub struct EstimatorParameters {
+    pub tracker_optical_flow_levels: u32,
+    pub tracker_grid_size: u32,
+    pub keyframe_window_size: usize,
+    pub epipolar_error_threshold: f32,
+    pub translation_threshold: f64,
+    pub rotation_threshold: f64,
+    pub max_frames_between_keyframes: u64,
+}
+
 /// Placeholder estimator implementation.
 /// Currently mimics the control flow and logging structure of the C++ Estimator::process_frame,
 /// but uses dummy values for tracking, optimization, and mapping.
@@ -61,11 +71,13 @@ pub struct Estimator {
     t_hat_rmat: na::Matrix3<f32>,
     t_1_0_matrix: na::SMatrix<f32, 3, 4>,
     // Full trajectory of keyframes
-    keyframe_trajectory: Vec<na::Isometry3<f32>>,
+    pub keyframe_trajectory: Vec<na::Isometry3<f32>>,
     // Latest computed pose (T_W_Cl: left camera in world)
     pub current_t_w_cam0: na::Isometry3<f32>,
     pub keyframe_window: KeyframeSlidingWindow,
     pub landmarks: HashMap<usize, na::Point3<f32>>, // Map from feature ID to 3D position in world
+    pub removed_good_landmarks: Vec<na::Point3<f32>>, // Store removed landmarks for visualization or analysis
+    pub new_keyframe_added: bool, // Flag to indicate if a new keyframe was added in the current frame
 }
 
 impl Estimator {
@@ -103,6 +115,8 @@ impl Estimator {
             current_t_w_cam0: na::Isometry3::identity(),
             keyframe_window: KeyframeSlidingWindow::new(keyframe_window_size),
             landmarks: HashMap::new(),
+            removed_good_landmarks: Vec::new(),
+            new_keyframe_added: false,
             t_1_0_matrix,
         }
     }
@@ -121,6 +135,7 @@ impl Estimator {
         let mut cam0_observations = HashMap::new();
         let mut cam1_observations = HashMap::new();
         let mut new_point_ids = Vec::new();
+        self.new_keyframe_added = false; // Reset the flag at the start of processing each frame
 
         // initialize landmarks if this is the first frame
         if self.landmarks.is_empty() {
@@ -181,6 +196,7 @@ impl Estimator {
                 new_point_ids,
             );
             self.keyframe_window.add_keyframe(frame);
+            self.new_keyframe_added = true;
         } else {
             let mut known_landmark_pnp = Vec::new();
             let mut observations_pnp = Vec::new();
@@ -342,6 +358,7 @@ impl Estimator {
                     new_point_ids,
                 );
                 let marg_keyframe_pose_and_ids = self.keyframe_window.add_keyframe(frame);
+                self.new_keyframe_added = true;
                 self.frames_since_last_keyframe = 0;
 
                 if let Some((marg_keyframe_pose, marg_keyframe_ids)) = marg_keyframe_pose_and_ids {
@@ -349,8 +366,11 @@ impl Estimator {
                         "Marginalizing out keyframe with pose: {:?}",
                         marg_keyframe_pose
                     );
+                    self.removed_good_landmarks.clear();
                     for id in &marg_keyframe_ids {
-                        self.landmarks.remove(id);
+                        if let Some(landmark) = self.landmarks.remove(id) {
+                            self.removed_good_landmarks.push(landmark);
+                        }
                         bad_points.push(*id);
                     }
                     self.keyframe_trajectory.push(marg_keyframe_pose);

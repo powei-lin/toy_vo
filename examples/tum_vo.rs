@@ -6,7 +6,6 @@ use camera_intrinsic_model::io::model_from_json;
 use clap::Parser;
 use glob::glob;
 use nalgebra as na;
-use patch_tracker::StereoPatchTracker;
 use toy_stereo_vo::estimator::Estimator;
 
 #[derive(Parser)]
@@ -82,41 +81,41 @@ fn log_rerun_image(rec: &rerun::RecordingStream, image: &image::GrayImage, entit
         .unwrap();
 }
 
-fn log_keypoints(
+fn log_image_keypoints(
     rec: &rerun::RecordingStream,
-    keypoints: &[[f32; 2]],
-    ids: &[usize],
-    entity_path: &str,
+    curr_keypoints: &HashMap<usize, (f32, f32)>,
+    prev_keypoints: &HashMap<usize, (f32, f32)>,
+    image_entity_path: &str,
 ) {
-    let (points, colors) = keypoints
+    // Cam0 points and lines
+    let (colors0, points0): (Vec<_>, Vec<(f32, f32)>) = curr_keypoints
         .iter()
-        .zip(ids.iter())
-        .filter_map(|(&kp, &id)| {
-            if id == usize::MAX {
-                return None; // Skip keypoints without valid IDs
-            } else {
-                let color = id_to_color(id as u64);
-                Some((kp, color))
-            }
+        .map(|(&id, &(x, y))| {
+            let color = id_to_color(id as u64);
+            (color, (x + 0.5, y + 0.5))
         })
-        .unzip::<[f32; 2], [u8; 3], Vec<_>, Vec<_>>();
-    let keypoint_ids: Vec<u16> = ids
-        .iter()
-        .filter_map(|&id| {
-            if id == usize::MAX {
-                None
-            } else {
-                Some(id as u16)
-            }
-        })
-        .collect();
+        .unzip();
     rec.log(
-        entity_path,
-        &rerun::Points2D::new(points)
-            .with_colors(colors)
-            .with_keypoint_ids(keypoint_ids),
+        format!("{}/points", image_entity_path),
+        &rerun::Points2D::new(points0).with_colors(colors0),
     )
     .unwrap();
+
+    let mut line_strips0 = Vec::new();
+    let mut line_colors0 = Vec::new();
+    for (&id, &(curr_x, curr_y)) in curr_keypoints {
+        if let Some(&(prev_x, prev_y)) = prev_keypoints.get(&id) {
+            line_strips0.push([(prev_x + 0.5, prev_y + 0.5), (curr_x + 0.5, curr_y + 0.5)]);
+            line_colors0.push(id_to_color(id as u64));
+        }
+    }
+    if !line_strips0.is_empty() {
+        rec.log(
+            format!("{}/lines", image_entity_path),
+            &rerun::LineStrips2D::new(line_strips0).with_colors(line_colors0),
+        )
+        .unwrap();
+    }
 }
 
 fn to_rerun_transform(transform: &na::Isometry3<f32>) -> rerun::Transform3D {
@@ -133,10 +132,70 @@ fn to_rerun_transform(transform: &na::Isometry3<f32>) -> rerun::Transform3D {
     )
 }
 
-fn log_pose(rec: &rerun::RecordingStream, transform: &na::Isometry3<f32>, entity_path: &str) {
+fn log_pose(
+    rec: &rerun::RecordingStream,
+    transform: &na::Isometry3<f32>,
+    entity_path: &str,
+    size: f32,
+) {
     rec.log(entity_path, &to_rerun_transform(transform))
         .unwrap();
-    rec.log(entity_path, &rerun::TransformAxes3D::new(1.0))
+    rec.log(entity_path, &rerun::TransformAxes3D::new(size))
+        .unwrap();
+}
+
+fn log_active_landmarks(
+    rec: &rerun::RecordingStream,
+    landmarks: &HashMap<usize, na::Point3<f32>>,
+    current_t_w_cam0: &na::Isometry3<f32>,
+    entity_path: &str,
+    range_threshold: f32,
+) {
+    let range_threshold2 = range_threshold * range_threshold;
+    let cam0_position = na::Point3::from(current_t_w_cam0.translation.vector);
+    let (colors, points): (Vec<[u8; 3]>, Vec<[f32; 3]>) = landmarks
+        .iter()
+        .filter_map(|(&feature_id, &point)| {
+            let distance2 = (point - cam0_position).norm_squared();
+            if distance2 < range_threshold2 {
+                Some((id_to_color(feature_id as u64), [point.x, point.y, point.z]))
+            } else {
+                None
+            }
+        })
+        .unzip();
+    rec.log(
+        entity_path,
+        &rerun::Points3D::new(points).with_colors(colors),
+    )
+    .unwrap();
+}
+
+fn log_old_landmarks(
+    rec: &rerun::RecordingStream,
+    landmarks: &[na::Point3<f32>],
+    entity_path: &str,
+) {
+    if landmarks.is_empty() {
+        return;
+    }
+    let points: Vec<[f32; 3]> = landmarks.iter().map(|pt| [pt.x, pt.y, pt.z]).collect();
+    rec.log(entity_path, &rerun::Points3D::new(points)).unwrap();
+}
+
+fn log_trajectory(
+    rec: &rerun::RecordingStream,
+    trajectory: &[na::Isometry3<f32>],
+    entity_path: &str,
+) {
+    let line_strips: Vec<[f32; 3]> = trajectory
+        .iter()
+        .map(|t_cam0_w| {
+            let tvec_w = t_cam0_w.inverse().translation.vector;
+            [tvec_w.x, tvec_w.y, tvec_w.z]
+        })
+        .collect();
+    rec.log(entity_path, &rerun::LineStrips3D::new([line_strips]))
         .unwrap();
 }
 
@@ -166,162 +225,93 @@ fn main() -> anyhow::Result<()> {
         t_cam1_cam0,
         5,  // Tracker optical flow levels
         16, // Tracker grid size
-        10, // Keyframe window size
+        7,  // Keyframe window size
     );
+    let rec = if cli.rerun {
+        Some(
+            rerun::RecordingStreamBuilder::new("vo")
+                .spawn_opts(&rerun::SpawnOptions {
+                    port: 9875,
+                    ..Default::default()
+                })
+                .unwrap(),
+        )
+    } else {
+        None
+    };
 
-    let rec = rerun::RecordingStreamBuilder::new("vo")
-        .spawn_opts(&rerun::SpawnOptions {
-            port: 9875,
-            ..Default::default()
-        })
-        .unwrap();
-    rec.log_static("/", &rerun::ViewCoordinates::RDF()).unwrap();
+    if let Some(rec) = &rec {
+        rec.log_static("/", &rerun::ViewCoordinates::RDF()).unwrap();
+    }
 
-    let mut trajectory: Vec<[f32; 3]> = Vec::new();
     let mut prev_points0: HashMap<usize, (f32, f32)> = HashMap::new();
     let mut prev_points1: HashMap<usize, (f32, f32)> = HashMap::new();
 
+    let start_time = std::time::Instant::now();
     for (i, (left_img_path, right_img_path)) in
         camera_images[0].iter().zip(&camera_images[1]).enumerate()
     {
-        let timestamp_ns = left_img_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0);
-        if timestamp_ns == 0 {
-            log::warn!(
-                "Failed to parse timestamp from filename '{}'",
-                left_img_path.display()
-            );
-            rec.set_time_sequence("frame", i as i64);
-        } else {
-            rec.set_time(
-                "epoch_time",
-                rerun::TimeCell::from_timestamp_nanos_since_epoch(timestamp_ns),
-            );
-        }
-
-        // println!(
-        //     "Pair {}: Left: {}, Right: {}",
-        //     i,
-        //     left_img_path.display(),
-        //     right_img_path.display()
-        // );
-
         let left_image = image::open(left_img_path)?.to_luma8();
         let right_image = image::open(right_img_path)?.to_luma8();
-        log_rerun_image(&rec, &left_image, "camera/left");
-        log_rerun_image(&rec, &right_image, "camera/right");
         estimator.process_frame(&left_image, &right_image)?;
-
         let [curr_points0, curr_points1] = &estimator.tracker.get_track_points();
 
-        // Cam0 points and lines
-        let (colors0, points0): (Vec<_>, Vec<(f32, f32)>) = curr_points0
-            .iter()
-            .map(|(&id, &(x, y))| {
-                let color = id_to_color(id as u64);
-                (color, (x + 0.5, y + 0.5))
-            })
-            .unzip();
-        rec.log(
-            "camera/left/points",
-            &rerun::Points2D::new(points0).with_colors(colors0),
-        )
-        .unwrap();
+        if let Some(rec) = &rec {
+            let timestamp_ns = left_img_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(0);
+            if timestamp_ns == 0 {
+                log::warn!(
+                    "Failed to parse timestamp from filename '{}'",
+                    left_img_path.display()
+                );
+                rec.set_time_sequence("frame", i as i64);
+            } else {
+                rec.set_time(
+                    "epoch_time",
+                    rerun::TimeCell::from_timestamp_nanos_since_epoch(timestamp_ns),
+                );
+            }
+            log_rerun_image(&rec, &left_image, "camera/left");
+            log_rerun_image(&rec, &right_image, "camera/right");
+            log_image_keypoints(&rec, curr_points0, &prev_points0, "camera/left");
+            log_image_keypoints(&rec, curr_points1, &prev_points1, "camera/right");
 
-        let mut line_strips0 = Vec::new();
-        let mut line_colors0 = Vec::new();
-        for (&id, &(curr_x, curr_y)) in curr_points0 {
-            if let Some(&(prev_x, prev_y)) = prev_points0.get(&id) {
-                line_strips0.push([(prev_x + 0.5, prev_y + 0.5), (curr_x + 0.5, curr_y + 0.5)]);
-                line_colors0.push(id_to_color(id as u64));
+            log_active_landmarks(
+                &rec,
+                &estimator.landmarks,
+                &estimator.current_t_w_cam0,
+                "/active_landmarks",
+                50.0,
+            );
+
+            log_pose(&rec, &estimator.current_t_w_cam0, "/current_pose", 0.4);
+            if estimator.new_keyframe_added {
+                for (i, kf) in estimator.keyframe_window.keyframes.iter().enumerate() {
+                    log_pose(
+                        &rec,
+                        &kf.t_cam0_w.inverse(),
+                        &format!("/keyframe_poses/keyframe_{}", i),
+                        0.3,
+                    );
+                }
+                log_old_landmarks(&rec, &estimator.removed_good_landmarks, "/old_landmarks");
+                log_trajectory(&rec, &estimator.keyframe_trajectory, "/trajectory");
             }
         }
-        if !line_strips0.is_empty() {
-            rec.log(
-                "camera/left/lines",
-                &rerun::LineStrips2D::new(line_strips0).with_colors(line_colors0),
-            )
-            .unwrap();
-        }
 
-        // Cam1 points and lines
-        let (colors1, points1): (Vec<_>, Vec<(f32, f32)>) = curr_points1
-            .iter()
-            .map(|(&id, &(x, y))| {
-                let color = id_to_color(id as u64);
-                (color, (x + 0.5, y + 0.5))
-            })
-            .unzip();
-        rec.log(
-            "camera/right/points",
-            &rerun::Points2D::new(points1).with_colors(colors1),
-        )
-        .unwrap();
-
-        let mut line_strips1 = Vec::new();
-        let mut line_colors1 = Vec::new();
-        for (&id, &(curr_x, curr_y)) in curr_points1 {
-            if let Some(&(prev_x, prev_y)) = prev_points1.get(&id) {
-                line_strips1.push([(prev_x + 0.5, prev_y + 0.5), (curr_x + 0.5, curr_y + 0.5)]);
-                line_colors1.push(id_to_color(id as u64));
-            }
-        }
-        if !line_strips1.is_empty() {
-            rec.log(
-                "camera/right/lines",
-                &rerun::LineStrips2D::new(line_strips1).with_colors(line_colors1),
-            )
-            .unwrap();
-        }
-
+        // for visualization purposes
         prev_points0 = curr_points0.clone();
         prev_points1 = curr_points1.clone();
-
-        let (colors, points): (Vec<[u8; 3]>, Vec<[f32; 3]>) = estimator
-            .landmarks
-            .iter()
-            .filter_map(|(&feature_id, &point)| {
-                if point[0] * point[0] + point[1] * point[1] + point[2] * point[2] < 10000.0 {
-                    Some((id_to_color(feature_id as u64), [point.x, point.y, point.z]))
-                } else {
-                    None
-                }
-            })
-            .unzip();
-        rec.log(
-            "/map/points",
-            &rerun::Points3D::new(points).with_colors(colors),
-        )
-        .unwrap();
-        log_pose(&rec, &estimator.current_t_w_cam0, "/current_pose");
-
-        //     // Keyframe poses — get_keyframe_poses() now returns T_W_Cl for each frame
-        //     let system_poses = estimator.sliding_window.get_keyframe_poses();
-        //     for (pose_id, T_W_Cl) in system_poses.iter().enumerate() {
-        //         let pose_path = format!("pose_{}", pose_id);
-        //         rec.log(pose_path.clone(), &to_rerun_transform(T_W_Cl))
-        //             .unwrap();
-        //         rec.log(pose_path, &rerun::TransformAxes3D::new(1.0))
-        //             .unwrap();
-        //     }
-
-        //     // History of keyframe poses
-        //     let mat = estimator
-        //         .sliding_window
-        //         .get_keyframe_poses()
-        //         .first()
-        //         .unwrap()
-        //         .cast();
-        //     trajectory.push([mat[(0, 3)], mat[(1, 3)], mat[(2, 3)]]);
-        //     rec.log(
-        //         "/trajectory",
-        //         &rerun::LineStrips3D::new([trajectory.clone()]),
-        //     )
-        //     .unwrap();
     }
+
+    let elapsed = start_time.elapsed();
+    println!(
+        "Processing time: {:.2?}ms average per frame",
+        elapsed.as_millis() as f64 / camera_images[0].len() as f64
+    );
 
     Ok(())
 }

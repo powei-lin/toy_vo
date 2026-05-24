@@ -1,10 +1,8 @@
 use crate::keyframe_sliding_window::KeyframeSlidingWindow;
 use nalgebra as na;
 use std::collections::HashMap;
-use std::sync::Arc;
 use tiny_solver::factors::Factor;
 use tiny_solver::loss_functions::HuberLoss;
-use tiny_solver::manifold::se3::{SE3, SE3Manifold};
 use tiny_solver::sparse::LinearSolverType;
 use tiny_solver::{Optimizer, OptimizerOptions, Problem};
 
@@ -95,7 +93,7 @@ pub fn bundle_adjustment(
     }
     // log::info!("Observation counts for landmarks: {:?}", count_observations);
     // Placeholder for bundle adjustment implementation
-    let mut problem = tiny_solver::Problem::new();
+    let mut problem = Problem::new();
     let mut initial_values = HashMap::<String, na::DVector<f64>>::new();
 
     let mut count_added_variables = HashMap::<String, usize>::new();
@@ -232,7 +230,7 @@ pub fn bundle_adjustment(
             *landmark_pos = na::Point3::new(landmark_vec.x, landmark_vec.y, landmark_vec.z);
         }
     });
-    let mut error_w_id: Vec<(f32, usize)> = count_added_variables
+    let error_w_id: Vec<(f32, usize)> = count_added_variables
         .iter()
         .filter_map(|(landmark_name, count)| {
             // reprojection error
@@ -269,12 +267,10 @@ pub fn bundle_adjustment(
         .collect();
     // error_w_id.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
     for (error, id) in error_w_id.iter() {
-        // println!("Landmark {} has average reprojection error {}", id, error);
         if *error > 0.01 {
             bad_landmarks.push(*id);
         }
     }
-    // println!("Landmark reprojection errors (sorted): {:?}", error_w_id);
 
     bad_landmarks
 }
