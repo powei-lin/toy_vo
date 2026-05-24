@@ -1,5 +1,5 @@
 [package]
-name = "toy_vo"
+name = "toy_stereo_vo"
 version = "0.1.0"
 edition = "2024"
 

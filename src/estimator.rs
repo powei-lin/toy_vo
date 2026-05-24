@@ -3,9 +3,7 @@ use camera_intrinsic_model::generic_model::GenericModel;
 use image::GrayImage;
 use nalgebra as na;
 use patch_tracker::StereoPatchTracker;
-use std::collections::{HashMap, HashSet};
-use std::time::Instant;
-use tiny_solver::manifold::se3::SE3;
+use std::collections::HashMap;
 use tiny_solver::manifold::so3::SO3;
 
 use crate::frame::Frame;
@@ -22,7 +20,6 @@ pub fn triangulate_points(
     undist_pt1: &na::Vector3<f32>,
     t_1_0: na::SMatrixView<f32, 3, 4>,
 ) -> na::Point3<f32> {
-    // println!("{}", t_1_0);
     let r0 = undist_pt1[0] * t_1_0.row(2) - t_1_0.row(0);
     let r1 = undist_pt1[1] * t_1_0.row(2) - t_1_0.row(1);
     let design_matrix = unsafe {
@@ -51,12 +48,10 @@ pub fn triangulate_points(
     na::Point3::from(p3d.transpose().fixed_rows::<3>(0).into_owned())
 }
 
-fn try_add_point() {}
-
 /// Placeholder estimator implementation.
 /// Currently mimics the control flow and logging structure of the C++ Estimator::process_frame,
 /// but uses dummy values for tracking, optimization, and mapping.
-pub struct Estimator2 {
+pub struct Estimator {
     frame_id_counter: u64,
     frames_since_last_keyframe: u64,
     pub tracker: StereoPatchTracker,
@@ -66,14 +61,14 @@ pub struct Estimator2 {
     t_hat_rmat: na::Matrix3<f32>,
     t_1_0_matrix: na::SMatrix<f32, 3, 4>,
     // Full trajectory of keyframes
-    trajectory: Vec<na::Isometry3<f32>>,
+    keyframe_trajectory: Vec<na::Isometry3<f32>>,
     // Latest computed pose (T_W_Cl: left camera in world)
     pub current_t_w_cam0: na::Isometry3<f32>,
     pub keyframe_window: KeyframeSlidingWindow,
     pub landmarks: HashMap<usize, na::Point3<f32>>, // Map from feature ID to 3D position in world
 }
 
-impl Estimator2 {
+impl Estimator {
     /// Create a new estimator configured with camera intrinsics and distortion
     /// loaded from the YAML configuration.
     ///
@@ -104,7 +99,7 @@ impl Estimator2 {
             cam1,
             t_cam1_cam0,
             t_hat_rmat,
-            trajectory: Vec::new(),
+            keyframe_trajectory: Vec::new(),
             current_t_w_cam0: na::Isometry3::identity(),
             keyframe_window: KeyframeSlidingWindow::new(keyframe_window_size),
             landmarks: HashMap::new(),
@@ -132,13 +127,13 @@ impl Estimator2 {
             // Initialize landmarks from the first frame's tracked points
             for (id, &(kp0_x, kp0_y)) in &tracked_points[0] {
                 if let Some(&(kp1_x, kp1_y)) = tracked_points[1].get(id) {
-                    println!("Initializing landmark {} from first frame", id);
+                    log::info!("Initializing landmark {} from first frame", id);
                     let mut undistorted_pt_cam0 =
                         self.cam0.unproject_one(&na::Vector2::new(kp0_x, kp0_y));
                     let mut undistorted_pt_cam1 =
                         self.cam1.unproject_one(&na::Vector2::new(kp1_x, kp1_y));
                     if undistorted_pt_cam0.z <= 0.0 || undistorted_pt_cam1.z <= 0.0 {
-                        println!(
+                        log::warn!(
                             "Warning: Landmark {} has non-positive depth after unprojection, skipping",
                             id
                         );
@@ -151,7 +146,7 @@ impl Estimator2 {
                         undistorted_pt_cam1.transpose() * self.t_hat_rmat * undistorted_pt_cam0;
                     if epipolar_error[(0, 0)].abs() > EPIPOLAR_ERROR_THRESHOLD {
                         bad_points.push(*id);
-                        println!(
+                        log::warn!(
                             "Warning: Landmark {} has high epipolar error ({:.6}), skipping",
                             id,
                             epipolar_error[(0, 0)].abs()
@@ -165,7 +160,7 @@ impl Estimator2 {
                         self.t_1_0_matrix.as_view(),
                     );
                     if landmark_pos_cam0.z <= 0.0 {
-                        println!(
+                        log::warn!(
                             "Warning: Landmark {} has non-positive depth after triangulation, skipping",
                             id
                         );
@@ -197,7 +192,7 @@ impl Estimator2 {
                     let mut undistorted_pt_cam0 =
                         self.cam0.unproject_one(&na::Vector2::new(kp0_x, kp0_y));
                     if undistorted_pt_cam0.z <= 0.0 {
-                        println!(
+                        log::warn!(
                             "Warning: Landmark {} has non-positive depth after unprojection, skipping",
                             id
                         );
@@ -212,7 +207,7 @@ impl Estimator2 {
                     continue; // Skip already initialized landmarks
                 }
             }
-            println!(
+            log::info!(
                 "Solving PnP with {} known landmarks",
                 known_landmark_pnp.len()
             );
@@ -247,7 +242,7 @@ impl Estimator2 {
                         let mut undistorted_pt_cam0 =
                             self.cam0.unproject_one(&na::Vector2::new(kp0_x, kp0_y));
                         if undistorted_pt_cam0.z <= 0.0 {
-                            println!(
+                            log::warn!(
                                 "Warning: Landmark {} has non-positive depth after unprojection, skipping",
                                 id
                             );
@@ -264,7 +259,7 @@ impl Estimator2 {
                         let mut undistorted_pt_cam1 =
                             self.cam1.unproject_one(&na::Vector2::new(kp1_x, kp1_y));
                         if undistorted_pt_cam1.z <= 0.0 {
-                            println!(
+                            log::warn!(
                                 "Warning: Landmark {} has non-positive depth after unprojection, skipping",
                                 id
                             );
@@ -289,7 +284,7 @@ impl Estimator2 {
                         let mut undistorted_pt_cam1 =
                             self.cam1.unproject_one(&na::Vector2::new(kp1_x, kp1_y));
                         if undistorted_pt_cam0.z <= 0.0 || undistorted_pt_cam1.z <= 0.0 {
-                            println!(
+                            log::warn!(
                                 "Warning: Landmark {} has non-positive depth after unprojection, skipping",
                                 id
                             );
@@ -302,7 +297,7 @@ impl Estimator2 {
                             undistorted_pt_cam1.transpose() * self.t_hat_rmat * undistorted_pt_cam0;
                         if epipolar_error[(0, 0)].abs() > EPIPOLAR_ERROR_THRESHOLD {
                             bad_points.push(*id);
-                            println!(
+                            log::warn!(
                                 "Warning: Landmark {} has high epipolar error ({:.6}), skipping",
                                 id,
                                 epipolar_error[(0, 0)].abs()
@@ -316,7 +311,7 @@ impl Estimator2 {
                             self.t_1_0_matrix.as_view(),
                         );
                         if landmark_pos_cam0.z <= 0.0 {
-                            println!(
+                            log::warn!(
                                 "Warning: Landmark {} has non-positive depth after triangulation, skipping",
                                 id
                             );
@@ -331,7 +326,7 @@ impl Estimator2 {
                         self.landmarks.insert(*id, landmark_pos_world);
                         new_point_ids.push(*id);
                     } else {
-                        println!(
+                        log::warn!(
                             "Warning: Landmark {} does not have a match in the right image, skipping",
                             id
                         );
@@ -339,7 +334,7 @@ impl Estimator2 {
                     }
                 }
 
-                println!("Adding new keyframe with pose: {:?}", self.current_t_w_cam0);
+                log::info!("Adding new keyframe with pose: {:?}", self.current_t_w_cam0);
                 let frame = Frame::new(
                     t_cam0_w_pnp_f32,
                     cam0_observations,
@@ -350,7 +345,7 @@ impl Estimator2 {
                 self.frames_since_last_keyframe = 0;
 
                 if let Some((marg_keyframe_pose, marg_keyframe_ids)) = marg_keyframe_pose_and_ids {
-                    println!(
+                    log::info!(
                         "Marginalizing out keyframe with pose: {:?}",
                         marg_keyframe_pose
                     );
@@ -358,6 +353,7 @@ impl Estimator2 {
                         self.landmarks.remove(id);
                         bad_points.push(*id);
                     }
+                    self.keyframe_trajectory.push(marg_keyframe_pose);
                 }
                 let bad_landmarks = bundle_adjustment(
                     &mut self.keyframe_window,
@@ -374,7 +370,7 @@ impl Estimator2 {
                         bad_points.push(*id);
                     }
                 }
-                println!("Not adding keyframe, pose change is too small");
+                log::info!("Not adding keyframe, pose change is too small");
             }
 
             // For subsequent frames, we can attempt to triangulate new landmarks from newly tracked points

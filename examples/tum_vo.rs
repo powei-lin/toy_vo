@@ -7,7 +7,7 @@ use clap::Parser;
 use glob::glob;
 use nalgebra as na;
 use patch_tracker::StereoPatchTracker;
-use toy_vo::estimator2::Estimator2;
+use toy_stereo_vo::estimator::Estimator;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -160,7 +160,7 @@ fn main() -> anyhow::Result<()> {
     let right_cam_model = model_from_json(&cli.right_camera_info);
     let t_cam1_cam0 = rtvec_from_json(&cli.rtvec).to_isometry3();
 
-    let mut estimator = Estimator2::new(
+    let mut estimator = Estimator::new(
         left_cam_model.cast(),
         right_cam_model.cast(),
         t_cam1_cam0,
@@ -184,9 +184,6 @@ fn main() -> anyhow::Result<()> {
     for (i, (left_img_path, right_img_path)) in
         camera_images[0].iter().zip(&camera_images[1]).enumerate()
     {
-        // if i > 305 {
-        //     break;
-        // }
         let timestamp_ns = left_img_path
             .file_stem()
             .and_then(|s| s.to_str())

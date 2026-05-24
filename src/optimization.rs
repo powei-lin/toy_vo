@@ -82,7 +82,7 @@ pub fn bundle_adjustment(
     t_cam1_cam0: &na::Isometry3<f32>,
 ) -> Vec<usize> {
     let mut bad_landmarks = Vec::new();
-    println!(
+    log::info!(
         "Running bundle adjustment on {} keyframes and {} landmarks",
         sliding_window.keyframes.len(),
         landmarks.len()
@@ -93,7 +93,7 @@ pub fn bundle_adjustment(
             *count_observations.entry(*id).or_insert(0) += 1;
         }
     }
-    // println!("Observation counts for landmarks: {:?}", count_observations);
+    // log::info!("Observation counts for landmarks: {:?}", count_observations);
     // Placeholder for bundle adjustment implementation
     let mut problem = tiny_solver::Problem::new();
     let mut initial_values = HashMap::<String, na::DVector<f64>>::new();
@@ -103,7 +103,7 @@ pub fn bundle_adjustment(
     for (i, frame) in sliding_window.keyframes.iter().enumerate() {
         let tvec_name = format!("tvec_cam0_w{}", i);
         let rvec_name = format!("rvec_cam0_w{}", i);
-        println!(
+        log::info!(
             "Processing keyframe {} with {} observations",
             i,
             frame.cam0_observations.len() + frame.cam1_observations.len()
@@ -200,7 +200,7 @@ pub fn bundle_adjustment(
             Some(OptimizerOptions {
                 linear_solver_type: LinearSolverType::SparseCholesky,
                 verbosity_level: 10,
-                max_iteration: 50,
+                max_iteration: 20,
                 ..Default::default()
             }), // use default optimizer options
         )
@@ -267,9 +267,9 @@ pub fn bundle_adjustment(
             }
         })
         .collect();
-    error_w_id.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    // error_w_id.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
     for (error, id) in error_w_id.iter() {
-        println!("Landmark {} has average reprojection error {}", id, error);
+        // println!("Landmark {} has average reprojection error {}", id, error);
         if *error > 0.01 {
             bad_landmarks.push(*id);
         }
