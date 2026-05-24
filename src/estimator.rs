@@ -3,17 +3,13 @@ use camera_intrinsic_model::generic_model::GenericModel;
 use image::GrayImage;
 use nalgebra as na;
 use patch_tracker::StereoPatchTracker;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tiny_solver::manifold::so3::SO3;
 
 use crate::frame::Frame;
 use crate::keyframe_sliding_window::KeyframeSlidingWindow;
 use crate::optimization::bundle_adjustment;
-
-const TRANSLATION_THRESHOLD: f64 = 0.4; // meters
-const ROTATION_THRESHOLD: f64 = 0.25; // radians
-const EPIPOLAR_ERROR_THRESHOLD: f32 = 0.005; // epipolar error threshold for filtering matches
-const MAX_FRAMES_BETWEEN_KEYFRAMES: u64 = 10; // Maximum number of frames between keyframes
 
 pub fn triangulate_points(
     undist_pt0: &na::Vector3<f32>,
@@ -48,6 +44,7 @@ pub fn triangulate_points(
     na::Point3::from(p3d.transpose().fixed_rows::<3>(0).into_owned())
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EstimatorParameters {
     pub tracker_optical_flow_levels: u32,
     pub tracker_grid_size: u32,
@@ -58,9 +55,20 @@ pub struct EstimatorParameters {
     pub max_frames_between_keyframes: u64,
 }
 
-/// Placeholder estimator implementation.
-/// Currently mimics the control flow and logging structure of the C++ Estimator::process_frame,
-/// but uses dummy values for tracking, optimization, and mapping.
+impl Default for EstimatorParameters {
+    fn default() -> Self {
+        Self {
+            tracker_optical_flow_levels: 5,
+            tracker_grid_size: 16,
+            keyframe_window_size: 7,
+            epipolar_error_threshold: 0.005,
+            translation_threshold: 0.4,
+            rotation_threshold: 0.25,
+            max_frames_between_keyframes: 10,
+        }
+    }
+}
+
 pub struct Estimator {
     frame_id_counter: u64,
     frames_since_last_keyframe: u64,
@@ -78,21 +86,17 @@ pub struct Estimator {
     pub landmarks: HashMap<usize, na::Point3<f32>>, // Map from feature ID to 3D position in world
     pub removed_good_landmarks: Vec<na::Point3<f32>>, // Store removed landmarks for visualization or analysis
     pub new_keyframe_added: bool, // Flag to indicate if a new keyframe was added in the current frame
+    pub params: EstimatorParameters, // Store the parameters used by the estimator
 }
 
 impl Estimator {
-    /// Create a new estimator configured with camera intrinsics and distortion
-    /// loaded from the YAML configuration.
-    ///
-    /// The `viewer` reference must outlive the estimator.
     pub fn new(
         cam0: GenericModel<f32>,
         cam1: GenericModel<f32>,
         t_cam1_cam0: na::Isometry3<f32>,
-        tracker_optical_flow_levels: u32,
-        tracker_grid_size: u32,
-        keyframe_window_size: usize,
+        optional_params: Option<EstimatorParameters>,
     ) -> Self {
+        let params = optional_params.unwrap_or_default();
         let t_hat = SO3::hat(t_cam1_cam0.translation.vector.normalize().as_view());
         let t_hat_rmat = t_hat * t_cam1_cam0.rotation.to_rotation_matrix().matrix();
         let t_1_0_matrix = {
@@ -106,18 +110,22 @@ impl Estimator {
         Self {
             frame_id_counter: 0,
             frames_since_last_keyframe: 0,
-            tracker: StereoPatchTracker::new(tracker_optical_flow_levels, tracker_grid_size),
+            tracker: StereoPatchTracker::new(
+                params.tracker_optical_flow_levels,
+                params.tracker_grid_size,
+            ),
             cam0,
             cam1,
             t_cam1_cam0,
             t_hat_rmat,
             keyframe_trajectory: Vec::new(),
             current_t_w_cam0: na::Isometry3::identity(),
-            keyframe_window: KeyframeSlidingWindow::new(keyframe_window_size),
+            keyframe_window: KeyframeSlidingWindow::new(params.keyframe_window_size),
             landmarks: HashMap::new(),
             removed_good_landmarks: Vec::new(),
             new_keyframe_added: false,
             t_1_0_matrix,
+            params,
         }
     }
 
@@ -159,7 +167,7 @@ impl Estimator {
                     undistorted_pt_cam1 /= undistorted_pt_cam1.z;
                     let epipolar_error =
                         undistorted_pt_cam1.transpose() * self.t_hat_rmat * undistorted_pt_cam0;
-                    if epipolar_error[(0, 0)].abs() > EPIPOLAR_ERROR_THRESHOLD {
+                    if epipolar_error[(0, 0)].abs() > self.params.epipolar_error_threshold {
                         bad_points.push(*id);
                         log::warn!(
                             "Warning: Landmark {} has high epipolar error ({:.6}), skipping",
@@ -243,13 +251,13 @@ impl Estimator {
                 .translation
                 .vector
                 .norm_squared()
-                > TRANSLATION_THRESHOLD.powi(2)
+                > self.params.translation_threshold.powi(2)
                 || t_last_key_cam0_current_cam0
                     .rotation
                     .scaled_axis()
                     .norm_squared()
-                    > ROTATION_THRESHOLD.powi(2)
-                || self.frames_since_last_keyframe > MAX_FRAMES_BETWEEN_KEYFRAMES; // Rough rotation threshold based on trace
+                    > self.params.rotation_threshold.powi(2)
+                || self.frames_since_last_keyframe > self.params.max_frames_between_keyframes; // Rough rotation threshold based on trace
 
             if need_keyframe {
                 // add observations for existing landmarks
@@ -311,7 +319,7 @@ impl Estimator {
                         undistorted_pt_cam1 /= undistorted_pt_cam1.z;
                         let epipolar_error =
                             undistorted_pt_cam1.transpose() * self.t_hat_rmat * undistorted_pt_cam0;
-                        if epipolar_error[(0, 0)].abs() > EPIPOLAR_ERROR_THRESHOLD {
+                        if epipolar_error[(0, 0)].abs() > self.params.epipolar_error_threshold {
                             bad_points.push(*id);
                             log::warn!(
                                 "Warning: Landmark {} has high epipolar error ({:.6}), skipping",

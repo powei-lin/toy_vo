@@ -6,22 +6,16 @@ use camera_intrinsic_model::io::model_from_json;
 use clap::Parser;
 use glob::glob;
 use nalgebra as na;
-use toy_stereo_vo::estimator::Estimator;
+use toy_stereo_vo::estimator::{Estimator, EstimatorParameters};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct StereoVoArgs {
     #[arg(short, long)]
-    folder: String,
+    dataset_folder: String,
 
     #[arg(short, long)]
-    left_camera_info: String,
-
-    #[arg(short, long)]
-    right_camera_info: String,
-
-    #[arg(long)]
-    rtvec: String,
+    config_folder: String,
 
     #[arg(long, action)]
     rerun: bool,
@@ -137,11 +131,16 @@ fn log_pose(
     transform: &na::Isometry3<f32>,
     entity_path: &str,
     size: f32,
+    option_camera_frustum: Option<rerun::Pinhole>,
 ) {
     rec.log(entity_path, &to_rerun_transform(transform))
         .unwrap();
-    rec.log(entity_path, &rerun::TransformAxes3D::new(size))
-        .unwrap();
+    if let Some(camera_frustum) = option_camera_frustum {
+        rec.log(entity_path, &camera_frustum).unwrap();
+    } else {
+        rec.log(entity_path, &rerun::TransformAxes3D::new(size))
+            .unwrap();
+    }
 }
 
 fn log_active_landmarks(
@@ -199,12 +198,26 @@ fn log_trajectory(
         .unwrap();
 }
 
+fn camera_model_to_rerun_pinhole(
+    model: &camera_intrinsic_model::GenericModel<f64>,
+) -> rerun::Pinhole {
+    let projection_matrix = model
+        .estimate_new_camera_matrix_for_undistort(0.0, None)
+        .cast();
+    rerun::Pinhole::from_focal_length_and_resolution(
+        [projection_matrix[(0, 0)], projection_matrix[(1, 1)]],
+        [model.width() as f32, model.height() as f32],
+    )
+    .with_principal_point([projection_matrix[(0, 2)], projection_matrix[(1, 2)]])
+    .with_image_plane_distance(0.1)
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let cli = StereoVoArgs::parse();
 
-    let root_folder = cli.folder;
+    let root_folder = cli.dataset_folder;
 
     let camera_images: Vec<Vec<PathBuf>> = (0..2)
         .map(|i| load_camera_images(&root_folder, i))
@@ -215,29 +228,33 @@ fn main() -> anyhow::Result<()> {
         "Mismatched or empty camera images"
     );
     println!("Found {} stereo image pairs", camera_images[0].len());
-    let left_cam_model = model_from_json(&cli.left_camera_info);
-    let right_cam_model = model_from_json(&cli.right_camera_info);
-    let t_cam1_cam0 = rtvec_from_json(&cli.rtvec).to_isometry3();
+
+    // load camera models and extrinsics
+    let config_folder = cli.config_folder;
+    let left_cam_model = model_from_json(&format!("{}/cam0.json", config_folder));
+    let right_cam_model = model_from_json(&format!("{}/cam1.json", config_folder));
+    let t_cam1_cam0 = rtvec_from_json(&format!("{}/extrinsics.json", config_folder)).to_isometry3();
 
     let mut estimator = Estimator::new(
         left_cam_model.cast(),
         right_cam_model.cast(),
         t_cam1_cam0,
-        5,  // Tracker optical flow levels
-        16, // Tracker grid size
-        7,  // Keyframe window size
+        Some(EstimatorParameters::default()),
     );
-    let rec = if cli.rerun {
-        Some(
-            rerun::RecordingStreamBuilder::new("vo")
-                .spawn_opts(&rerun::SpawnOptions {
-                    port: 9875,
-                    ..Default::default()
-                })
-                .unwrap(),
+    let (rec, camera_frustum) = if cli.rerun {
+        (
+            Some(
+                rerun::RecordingStreamBuilder::new("vo")
+                    .spawn_opts(&rerun::SpawnOptions {
+                        port: 9875,
+                        ..Default::default()
+                    })
+                    .unwrap(),
+            ),
+            Some(camera_model_to_rerun_pinhole(&left_cam_model.cast())),
         )
     } else {
-        None
+        (None, None)
     };
 
     if let Some(rec) = &rec {
@@ -287,7 +304,20 @@ fn main() -> anyhow::Result<()> {
                 50.0,
             );
 
-            log_pose(&rec, &estimator.current_t_w_cam0, "/current_pose", 0.4);
+            log_pose(
+                &rec,
+                &estimator.current_t_w_cam0,
+                "/current_pose/left",
+                0.4,
+                camera_frustum.clone(),
+            );
+            log_pose(
+                &rec,
+                &(estimator.current_t_w_cam0 * t_cam1_cam0),
+                "/current_pose/right",
+                0.4,
+                camera_frustum.clone(),
+            );
             if estimator.new_keyframe_added {
                 for (i, kf) in estimator.keyframe_window.keyframes.iter().enumerate() {
                     log_pose(
@@ -295,6 +325,7 @@ fn main() -> anyhow::Result<()> {
                         &kf.t_cam0_w.inverse(),
                         &format!("/keyframe_poses/keyframe_{}", i),
                         0.3,
+                        None,
                     );
                 }
                 log_old_landmarks(&rec, &estimator.removed_good_landmarks, "/old_landmarks");
