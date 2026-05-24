@@ -7,6 +7,12 @@ A very simple stereo visual odometry library.
 
 
 ## Run Example
+
+You can download datasets from
+
+* [EuRoC MAV Dataset](https://projects.asl.ethz.ch/datasets/euroc-mav/)
+* [TUM Visual-Inertial Dataset](https://cvg.cit.tum.de/data/datasets/visual-inertial-dataset)
+
 #### Python
 ```bash
 pip install toy-vo rerun-sdk==0.32 opencv-python scipy
@@ -18,11 +24,14 @@ git clone https://github.com/powei-lin/toy_vo.git && cd toy_vo
 cargo run -r --example run_stereo -- -d {your_path/dataset-corridor4_512_16} -c configs/tum_vi --rerun
 ```
 
+## Calibrate your own camera and run toy-vo
+Use [camera-intrinsic-calibration](https://github.com/powei-lin/camera-intrinsic-calibration-rs) and format your images like euroc dataset.
+
 ## Acknowledgements
-Thanks all the auther of these libraries.
+Thanks to all the authors of these libraries.
 - [basalt](https://gitlab.com/VladyslavUsenko/basalt)
 - [faer](https://codeberg.org/sarah-quinones/faer)
 - [nalgebra](https://github.com/dimforge/nalgebra)
 - [rerun](https://github.com/rerun-io/rerun)
 
-And thanks [Hossam R.](https://github.com/jumpinthefire) for implementing the LM method in [tiny-solver](https://github.com/powei-lin/tiny-solver-rs).
+And thanks to [Hossam R.](https://github.com/jumpinthefire) for implementing the LM method in [tiny-solver](https://github.com/powei-lin/tiny-solver-rs).
