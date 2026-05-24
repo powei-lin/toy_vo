@@ -212,6 +212,10 @@ impl Estimator2 {
                     continue; // Skip already initialized landmarks
                 }
             }
+            println!(
+                "Solving PnP with {} known landmarks",
+                known_landmark_pnp.len()
+            );
 
             let (rvec, tvec) = sqpnp_simple::sqpnp_solve(&known_landmark_pnp, &observations_pnp)
                 .expect("solve pnp failed");
@@ -279,7 +283,7 @@ impl Estimator2 {
                         continue; // Skip already initialized landmarks
                     }
                     if let Some(&(kp1_x, kp1_y)) = tracked_points[1].get(id) {
-                        println!("Triangulating new landmark {} from current frame", id);
+                        // println!("Triangulating new landmark {} from current frame", id);
                         let mut undistorted_pt_cam0 =
                             self.cam0.unproject_one(&na::Vector2::new(kp0_x, kp0_y));
                         let mut undistorted_pt_cam1 =
@@ -342,24 +346,28 @@ impl Estimator2 {
                     cam1_observations,
                     new_point_ids,
                 );
-                let marg_keyframe = self.keyframe_window.add_keyframe(frame);
+                let marg_keyframe_pose_and_ids = self.keyframe_window.add_keyframe(frame);
                 self.frames_since_last_keyframe = 0;
 
-                if let Some(marg_keyframe) = marg_keyframe {
+                if let Some((marg_keyframe_pose, marg_keyframe_ids)) = marg_keyframe_pose_and_ids {
                     println!(
                         "Marginalizing out keyframe with pose: {:?}",
-                        marg_keyframe.t_cam0_w
+                        marg_keyframe_pose
                     );
-                    for id in &marg_keyframe.new_point_ids {
+                    for id in &marg_keyframe_ids {
                         self.landmarks.remove(id);
+                        bad_points.push(*id);
                     }
                 }
-
-                bundle_adjustment(
+                let bad_landmarks = bundle_adjustment(
                     &mut self.keyframe_window,
                     &mut self.landmarks,
                     &self.t_cam1_cam0,
                 );
+                for id in bad_landmarks {
+                    self.landmarks.remove(&id);
+                    bad_points.push(id);
+                }
             } else {
                 for id in tracked_points[0].keys() {
                     if !self.landmarks.contains_key(id) {

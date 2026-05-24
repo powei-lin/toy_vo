@@ -165,7 +165,7 @@ fn main() -> anyhow::Result<()> {
         right_cam_model.cast(),
         t_cam1_cam0,
         5,  // Tracker optical flow levels
-        30, // Tracker grid size
+        16, // Tracker grid size
         10, // Keyframe window size
     );
 
@@ -184,9 +184,9 @@ fn main() -> anyhow::Result<()> {
     for (i, (left_img_path, right_img_path)) in
         camera_images[0].iter().zip(&camera_images[1]).enumerate()
     {
-        if i > 305 {
-            break;
-        }
+        // if i > 305 {
+        //     break;
+        // }
         let timestamp_ns = left_img_path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -287,7 +287,7 @@ fn main() -> anyhow::Result<()> {
             .landmarks
             .iter()
             .filter_map(|(&feature_id, &point)| {
-                if point[0] * point[0] + point[1] * point[1] + point[2] * point[2] < 1000.0 {
+                if point[0] * point[0] + point[1] * point[1] + point[2] * point[2] < 10000.0 {
                     Some((id_to_color(feature_id as u64), [point.x, point.y, point.z]))
                 } else {
                     None

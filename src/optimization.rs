@@ -8,7 +8,7 @@ use tiny_solver::manifold::se3::{SE3, SE3Manifold};
 use tiny_solver::sparse::LinearSolverType;
 use tiny_solver::{Optimizer, OptimizerOptions, Problem};
 
-const HUBER_LOSS_DELTA: f64 = 0.1;
+const HUBER_LOSS_DELTA: f64 = 0.001;
 
 /// Trait for converting vector types to nalgebra DVector.
 pub trait Vec3DVec<T: Clone> {
@@ -80,7 +80,8 @@ pub fn bundle_adjustment(
     sliding_window: &mut KeyframeSlidingWindow,
     landmarks: &mut HashMap<usize, na::Point3<f32>>,
     t_cam1_cam0: &na::Isometry3<f32>,
-) {
+) -> Vec<usize> {
+    let mut bad_landmarks = Vec::new();
     println!(
         "Running bundle adjustment on {} keyframes and {} landmarks",
         sliding_window.keyframes.len(),
@@ -92,19 +93,10 @@ pub fn bundle_adjustment(
             *count_observations.entry(*id).or_insert(0) += 1;
         }
     }
-    println!("Observation counts for landmarks: {:?}", count_observations);
+    // println!("Observation counts for landmarks: {:?}", count_observations);
     // Placeholder for bundle adjustment implementation
     let mut problem = tiny_solver::Problem::new();
     let mut initial_values = HashMap::<String, na::DVector<f64>>::new();
-    let t_cam1_cam0_dvec = na::dvector![
-        t_cam1_cam0.rotation.coords.x,
-        t_cam1_cam0.rotation.coords.y,
-        t_cam1_cam0.rotation.coords.z,
-        t_cam1_cam0.rotation.coords.w,
-        t_cam1_cam0.translation.vector.x,
-        t_cam1_cam0.translation.vector.y,
-        t_cam1_cam0.translation.vector.z,
-    ];
 
     let mut count_added_variables = HashMap::<String, usize>::new();
 
@@ -179,9 +171,9 @@ pub fn bundle_adjustment(
         initial_values.insert(tvec_name, tvec_cam0_w.cast::<f64>());
         initial_values.insert(rvec_name, rvec_cam0_w.cast::<f64>());
     }
-    for (name, count) in count_added_variables.iter() {
-        println!("Variable {} is involved in {} residuals", name, count);
-    }
+    // for (name, count) in count_added_variables.iter() {
+    //     println!("Variable {} is involved in {} residuals", name, count);
+    // }
     // panic!("stop here for now");
 
     // println!("initial values: {:?}", initial_values);
@@ -194,12 +186,12 @@ pub fn bundle_adjustment(
     // panic!("stop here for now");
 
     // initialize optimizer
-    // let optimizer = tiny_solver::LevenbergMarquardtOptimizer::new(1e-6, 1e-2, 1e4);
-    let optimizer = tiny_solver::GaussNewtonOptimizer::new();
-    println!(
-        "starting pose tvec_cam0_w1: {:?}",
-        initial_values["tvec_cam0_w1"]
-    );
+    let optimizer = tiny_solver::LevenbergMarquardtOptimizer::new(1e-6, 1e-2, 1e2);
+    // let optimizer = tiny_solver::GaussNewtonOptimizer::new();
+    // println!(
+    //     "starting pose tvec_cam0_w1: {:?}",
+    //     initial_values["tvec_cam0_w1"]
+    // );
     // // optimize
     let result = optimizer
         .optimize(
@@ -208,11 +200,13 @@ pub fn bundle_adjustment(
             Some(OptimizerOptions {
                 linear_solver_type: LinearSolverType::SparseCholesky,
                 verbosity_level: 10,
+                max_iteration: 50,
                 ..Default::default()
             }), // use default optimizer options
         )
         .unwrap();
-    println!("optimized pose tvec_cam0_w1: {:?}", result["tvec_cam0_w1"]);
+
+    // println!("optimized pose tvec_cam0_w1: {:?}", result["tvec_cam0_w1"]);
     sliding_window
         .keyframes
         .iter_mut()
@@ -238,4 +232,49 @@ pub fn bundle_adjustment(
             *landmark_pos = na::Point3::new(landmark_vec.x, landmark_vec.y, landmark_vec.z);
         }
     });
+    let mut error_w_id: Vec<(f32, usize)> = count_added_variables
+        .iter()
+        .filter_map(|(landmark_name, count)| {
+            // reprojection error
+            if let Some(landmark_opt) = result.get(landmark_name) {
+                let landmark_vec = landmark_opt.to_vec3().cast::<f32>();
+                let landmark_pos = na::Point3::new(landmark_vec.x, landmark_vec.y, landmark_vec.z);
+                let l_id: usize = landmark_name[1..].parse().unwrap();
+                let mut total_error = 0.0;
+                sliding_window.keyframes.iter().for_each(|frame| {
+                    if let Some(observed_pt) = frame.cam0_observations.get(&l_id) {
+                        let projected_pt = frame.t_cam0_w * landmark_pos;
+                        let reprojection_error =
+                            ((projected_pt.x / projected_pt.z - observed_pt.0).powi(2)
+                                + (projected_pt.y / projected_pt.z - observed_pt.1).powi(2))
+                            .sqrt();
+                        total_error += reprojection_error;
+                    }
+                    if let Some(observed_pt) = frame.cam1_observations.get(&l_id) {
+                        let projected_pt_cam1 = *t_cam1_cam0 * (frame.t_cam0_w * landmark_pos);
+                        let reprojection_error_cam1 = ((projected_pt_cam1.x / projected_pt_cam1.z
+                            - observed_pt.0)
+                            .powi(2)
+                            + (projected_pt_cam1.y / projected_pt_cam1.z - observed_pt.1).powi(2))
+                        .sqrt();
+                        total_error += reprojection_error_cam1;
+                    }
+                });
+                let avg_error = total_error / (*count as f32);
+                Some((avg_error, l_id))
+            } else {
+                None
+            }
+        })
+        .collect();
+    error_w_id.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    for (error, id) in error_w_id.iter() {
+        println!("Landmark {} has average reprojection error {}", id, error);
+        if *error > 0.01 {
+            bad_landmarks.push(*id);
+        }
+    }
+    // println!("Landmark reprojection errors (sorted): {:?}", error_w_id);
+
+    bad_landmarks
 }

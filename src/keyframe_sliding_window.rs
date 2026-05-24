@@ -15,7 +15,7 @@ impl KeyframeSlidingWindow {
         }
     }
 
-    pub fn add_keyframe(&mut self, frame: Frame) -> Option<Frame> {
+    pub fn add_keyframe(&mut self, frame: Frame) -> Option<(na::Isometry3<f32>, Vec<usize>)> {
         let marg_keyframe = if self.keyframes.len() == self.max_size {
             log::debug!("Sliding window is full, removing the oldest keyframe");
             self.keyframes.pop_front()
@@ -23,16 +23,28 @@ impl KeyframeSlidingWindow {
             None
         };
         self.keyframes.push_back(frame);
-        if let Some(ref marg_kf) = marg_keyframe {
+        if let Some(marg_kf) = marg_keyframe {
             log::debug!("Marginalizing keyframe with pose: {:?}", marg_kf.t_cam0_w);
-            for id in &marg_kf.new_point_ids {
+            let (mut kept, removed): (Vec<_>, Vec<_>) = marg_kf.new_point_ids.iter().cloned().partition(|id|{
+                if self.keyframes[0].cam0_observations.contains_key(id) && self.keyframes[0].cam1_observations.contains_key(id) {
+                    log::debug!("Landmark {} is still observed in the oldest keyframe, keeping it in the sliding window", id);
+                    true
+                } else {
+                    log::debug!("Landmark {} is not observed in the oldest keyframe, removing it from the sliding window", id);
+                    false
+                }
+            });
+            for id in &removed {
                 self.keyframes.iter_mut().for_each(|kf| {
                     kf.cam0_observations.remove(id);
                     kf.cam1_observations.remove(id);
                 });
             }
+            self.keyframes[0].new_point_ids.append(&mut kept);
+            Some((marg_kf.t_cam0_w, removed))
+        } else {
+            None
         }
-        marg_keyframe
     }
 
     pub fn is_full(&self) -> bool {
