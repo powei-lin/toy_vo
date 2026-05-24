@@ -15,13 +15,24 @@ impl KeyframeSlidingWindow {
         }
     }
 
-    pub fn add_keyframe(&mut self, frame: Frame) {
-        if self.keyframes.len() == self.max_size {
+    pub fn add_keyframe(&mut self, frame: Frame) -> Option<Frame> {
+        let marg_keyframe = if self.keyframes.len() == self.max_size {
             log::debug!("Sliding window is full, removing the oldest keyframe");
-            println!("!!!!!!!!!!!!!!!!!! Sliding window is full, removing the oldest keyframe");
-            self.keyframes.pop_front();
-        }
+            self.keyframes.pop_front()
+        } else {
+            None
+        };
         self.keyframes.push_back(frame);
+        if let Some(ref marg_kf) = marg_keyframe {
+            log::debug!("Marginalizing keyframe with pose: {:?}", marg_kf.t_cam0_w);
+            for id in &marg_kf.new_point_ids {
+                self.keyframes.iter_mut().for_each(|kf| {
+                    kf.cam0_observations.remove(id);
+                    kf.cam1_observations.remove(id);
+                });
+            }
+        }
+        marg_keyframe
     }
 
     pub fn is_full(&self) -> bool {

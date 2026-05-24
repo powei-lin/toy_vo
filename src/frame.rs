@@ -8,6 +8,7 @@ pub struct Frame {
     pub cam0_observations: HashMap<usize, (f32, f32)>,
     /// undistorted pixel coordinates of observed features in the right camera, keyed by feature ID
     pub cam1_observations: HashMap<usize, (f32, f32)>,
+    pub new_point_ids: Vec<usize>,
 }
 
 impl Frame {
@@ -15,11 +16,13 @@ impl Frame {
         t_cam0_w: na::Isometry3<f32>,
         cam0_observations: HashMap<usize, (f32, f32)>,
         cam1_observations: HashMap<usize, (f32, f32)>,
+        new_point_ids: Vec<usize>,
     ) -> Self {
         Self {
             t_cam0_w,
             cam0_observations,
             cam1_observations,
+            new_point_ids,
         }
     }
 }

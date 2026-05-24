@@ -125,6 +125,7 @@ impl Estimator2 {
         let mut bad_points = Vec::new();
         let mut cam0_observations = HashMap::new();
         let mut cam1_observations = HashMap::new();
+        let mut new_point_ids = Vec::new();
 
         // initialize landmarks if this is the first frame
         if self.landmarks.is_empty() {
@@ -174,6 +175,7 @@ impl Estimator2 {
                     cam0_observations.insert(*id, (undistorted_pt_cam0.x, undistorted_pt_cam0.y));
                     cam1_observations.insert(*id, (undistorted_pt_cam1.x, undistorted_pt_cam1.y));
                     self.landmarks.insert(*id, landmark_pos_cam0);
+                    new_point_ids.push(*id);
                 }
             }
             self.tracker.remove_id(&bad_points);
@@ -181,6 +183,7 @@ impl Estimator2 {
                 na::Isometry::identity(),
                 cam0_observations,
                 cam1_observations,
+                new_point_ids,
             );
             self.keyframe_window.add_keyframe(frame);
         } else {
@@ -322,6 +325,7 @@ impl Estimator2 {
                             .insert(*id, (undistorted_pt_cam1.x, undistorted_pt_cam1.y));
                         let landmark_pos_world = self.current_t_w_cam0 * landmark_pos_cam0;
                         self.landmarks.insert(*id, landmark_pos_world);
+                        new_point_ids.push(*id);
                     } else {
                         println!(
                             "Warning: Landmark {} does not have a match in the right image, skipping",
@@ -332,9 +336,24 @@ impl Estimator2 {
                 }
 
                 println!("Adding new keyframe with pose: {:?}", self.current_t_w_cam0);
-                let frame = Frame::new(t_cam0_w_pnp_f32, cam0_observations, cam1_observations);
-                self.keyframe_window.add_keyframe(frame);
+                let frame = Frame::new(
+                    t_cam0_w_pnp_f32,
+                    cam0_observations,
+                    cam1_observations,
+                    new_point_ids,
+                );
+                let marg_keyframe = self.keyframe_window.add_keyframe(frame);
                 self.frames_since_last_keyframe = 0;
+
+                if let Some(marg_keyframe) = marg_keyframe {
+                    println!(
+                        "Marginalizing out keyframe with pose: {:?}",
+                        marg_keyframe.t_cam0_w
+                    );
+                    for id in &marg_keyframe.new_point_ids {
+                        self.landmarks.remove(id);
+                    }
+                }
 
                 bundle_adjustment(
                     &mut self.keyframe_window,

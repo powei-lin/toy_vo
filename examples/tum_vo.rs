@@ -184,7 +184,7 @@ fn main() -> anyhow::Result<()> {
     for (i, (left_img_path, right_img_path)) in
         camera_images[0].iter().zip(&camera_images[1]).enumerate()
     {
-        if i > 105 {
+        if i > 305 {
             break;
         }
         let timestamp_ns = left_img_path
