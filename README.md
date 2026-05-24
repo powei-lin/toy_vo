@@ -1,6 +1,6 @@
 # toy_vo
-[![crate](https://img.shields.io/crates/v/patch-tracker.svg)](https://crates.io/crates/toy)
-[![PyPI - Version](https://img.shields.io/pypi/v/patch-tracker.svg)](https://pypi.org/project/patch-tracker)
+[![crate](https://img.shields.io/crates/v/toy-vo.svg)](https://crates.io/crates/toy-vo)
+[![PyPI - Version](https://img.shields.io/pypi/v/toy-vo.svg)](https://pypi.org/project/toy-vo)
 
 A very simple stereo visual odometry library.
 <img src="docs/euroc.jpg" width="600" alt="Euroc">
@@ -9,7 +9,7 @@ A very simple stereo visual odometry library.
 ## Run Example
 #### Python
 ```bash
-pip install toy_vo rerun-sdk==0.32 opencv-python scipy
+pip install toy-vo rerun-sdk==0.32 opencv-python scipy
 python3 examples/run_stereo.py -d {your_path/V1_01_easy} -c configs/euroc --rerun
 ```
 #### Rust
