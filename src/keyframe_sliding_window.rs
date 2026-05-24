@@ -2,12 +2,14 @@ use crate::frame::Frame;
 use nalgebra as na;
 use std::collections::VecDeque;
 
+/// Maintains a fixed-size queue of keyframes for local bundle adjustment.
 pub struct KeyframeSlidingWindow {
     pub max_size: usize,
     pub keyframes: VecDeque<Frame>,
 }
 
 impl KeyframeSlidingWindow {
+    /// Creates an empty sliding window with the requested maximum number of keyframes.
     pub fn new(max_size: usize) -> Self {
         Self {
             max_size,
@@ -15,6 +17,7 @@ impl KeyframeSlidingWindow {
         }
     }
 
+    /// Adds a keyframe and, when the window is full, returns the marginalized pose and removed landmark IDs.
     pub fn add_keyframe(&mut self, frame: Frame) -> Option<(na::Isometry3<f32>, Vec<usize>)> {
         let marg_keyframe = if self.keyframes.len() == self.max_size {
             log::debug!("Sliding window is full, removing the oldest keyframe");
@@ -47,10 +50,12 @@ impl KeyframeSlidingWindow {
         }
     }
 
+    /// Returns whether the sliding window has reached its configured capacity.
     pub fn is_full(&self) -> bool {
         self.keyframes.len() == self.max_size
     }
 
+    /// Returns the pose of the newest keyframe, or identity if the window is empty.
     pub fn last_keyframe_t_cam0_w(&self) -> na::Isometry3<f32> {
         if self.keyframes.is_empty() {
             na::Isometry3::identity()

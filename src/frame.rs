@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use nalgebra as na;
 
+/// Stores the pose and stereo observations associated with a tracked frame.
 pub struct Frame {
     pub t_cam0_w: na::Isometry3<f32>,
     /// undistorted pixel coordinates of observed features, keyed by feature ID
@@ -12,6 +13,7 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// Creates a frame from its pose, stereo observations, and newly triangulated landmark IDs.
     pub fn new(
         t_cam0_w: na::Isometry3<f32>,
         cam0_observations: HashMap<usize, (f32, f32)>,

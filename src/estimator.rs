@@ -11,6 +11,7 @@ use crate::frame::Frame;
 use crate::keyframe_sliding_window::KeyframeSlidingWindow;
 use crate::optimization::bundle_adjustment;
 
+/// Triangulates a 3D point from a stereo correspondence expressed in normalized camera coordinates.
 pub fn triangulate_points(
     undist_pt0: &na::Vector3<f32>,
     undist_pt1: &na::Vector3<f32>,
@@ -45,6 +46,7 @@ pub fn triangulate_points(
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+/// Groups the tunable parameters that control tracking, keyframe insertion, and geometric checks.
 pub struct EstimatorParameters {
     pub tracker_optical_flow_levels: u32,
     pub tracker_grid_size: u32,
@@ -69,6 +71,7 @@ impl Default for EstimatorParameters {
     }
 }
 
+/// Tracks stereo features, maintains landmarks, and estimates camera motion over time.
 pub struct Estimator {
     frame_id_counter: u64,
     frames_since_last_keyframe: u64,
@@ -90,6 +93,7 @@ pub struct Estimator {
 }
 
 impl Estimator {
+    /// Creates a stereo visual odometry estimator from calibrated cameras and an optional parameter set.
     pub fn new(
         cam0: GenericModel<f32>,
         cam1: GenericModel<f32>,

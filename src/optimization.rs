@@ -27,6 +27,7 @@ impl<T: Clone> Vec3DVec<T> for na::Vector3<T> {
     }
 }
 #[derive(Clone)]
+/// Reprojection residual for an observation made in the left camera.
 pub struct ReprojectionFactorCam0 {
     pub observed_normalized_pt: (f32, f32),
 }
@@ -50,6 +51,7 @@ impl<T: na::RealField> Factor<T> for ReprojectionFactorCam0 {
 }
 
 #[derive(Clone)]
+/// Reprojection residual for an observation made in the right camera.
 pub struct ReprojectionFactorCam1 {
     pub observed_normalized_pt: (f32, f32),
     pub t_cam1_cam0: na::Isometry3<f32>,
@@ -74,6 +76,7 @@ impl<T: na::RealField> Factor<T> for ReprojectionFactorCam1 {
     }
 }
 
+/// Runs local bundle adjustment on the current sliding window and returns landmark IDs rejected as bad.
 pub fn bundle_adjustment(
     sliding_window: &mut KeyframeSlidingWindow,
     landmarks: &mut HashMap<usize, na::Point3<f32>>,
