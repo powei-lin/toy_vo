@@ -12,6 +12,7 @@ You can download datasets from
 
 * [EuRoC MAV Dataset](https://projects.asl.ethz.ch/datasets/euroc-mav/)
 * [TUM Visual-Inertial Dataset](https://cvg.cit.tum.de/data/datasets/visual-inertial-dataset)
+* [TUM 4Seasons Dataset](https://cvg.cit.tum.de/data/datasets/4seasons-dataset/download)
 
 #### Python
 ```bash
