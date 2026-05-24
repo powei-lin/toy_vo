@@ -8,7 +8,7 @@ license = "GPL-2.0-or-later"
 description = "A very simple stereo visual odometry library"
 homepage = "https://github.com/powei-lin/toy_vo"
 repository = "https://github.com/powei-lin/toy_vo"
-keywords = ["visual odometry", "robotics"]
+keywords = ["visual-odometry", "robotics"]
 categories = ["data-structures", "science", "mathematics"]
 
 [lib]
