@@ -277,3 +277,72 @@ pub fn bundle_adjustment(
 
     bad_landmarks
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vec3_to_dvec() {
+        let v = na::Vector3::new(1.0, 2.0, 3.0);
+        let dv = v.to_dvec();
+        assert_eq!(dv.len(), 3);
+        assert_eq!(dv[0], 1.0);
+        assert_eq!(dv[1], 2.0);
+        assert_eq!(dv[2], 3.0);
+    }
+
+    #[test]
+    fn test_dvec_to_vec3() {
+        let dv = na::dvector![4.0, 5.0, 6.0];
+        let v: na::Vector3<f64> = dv.to_vec3();
+        assert_eq!(v.x, 4.0);
+        assert_eq!(v.y, 5.0);
+        assert_eq!(v.z, 6.0);
+    }
+
+    #[test]
+    fn test_reprojection_factor_cam0_zero_residual() {
+        // Landmark at (0, 0, 5) in world, camera at identity -> projects to (0, 0)
+        let factor = ReprojectionFactorCam0 {
+            observed_normalized_pt: (0.0, 0.0),
+        };
+        let tvec: na::DVector<f64> = na::dvector![0.0, 0.0, 0.0];
+        let rvec: na::DVector<f64> = na::dvector![0.0, 0.0, 0.0];
+        let landmark: na::DVector<f64> = na::dvector![0.0, 0.0, 5.0];
+        let residual = Factor::<f64>::residual_func(&factor, &[tvec, rvec, landmark]);
+        assert!(residual[0].abs() < 1e-10);
+        assert!(residual[1].abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_reprojection_factor_cam0_nonzero_residual() {
+        // Landmark at (1, 2, 5) in world, camera at identity
+        // Projects to (1/5, 2/5) = (0.2, 0.4)
+        // Observed at (0.0, 0.0) -> residual = (0.2, 0.4)
+        let factor = ReprojectionFactorCam0 {
+            observed_normalized_pt: (0.0, 0.0),
+        };
+        let tvec: na::DVector<f64> = na::dvector![0.0, 0.0, 0.0];
+        let rvec: na::DVector<f64> = na::dvector![0.0, 0.0, 0.0];
+        let landmark: na::DVector<f64> = na::dvector![1.0, 2.0, 5.0];
+        let residual = Factor::<f64>::residual_func(&factor, &[tvec, rvec, landmark]);
+        assert!((residual[0] - 0.2).abs() < 1e-10);
+        assert!((residual[1] - 0.4).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_reprojection_factor_cam1() {
+        // Camera 1 = identity transform from camera 0
+        let factor = ReprojectionFactorCam1 {
+            observed_normalized_pt: (0.0, 0.0),
+            t_cam1_cam0: na::Isometry3::identity(),
+        };
+        let tvec: na::DVector<f64> = na::dvector![0.0, 0.0, 0.0];
+        let rvec: na::DVector<f64> = na::dvector![0.0, 0.0, 0.0];
+        let landmark: na::DVector<f64> = na::dvector![0.0, 0.0, 5.0];
+        let residual = Factor::<f64>::residual_func(&factor, &[tvec, rvec, landmark]);
+        assert!(residual[0].abs() < 1e-10);
+        assert!(residual[1].abs() < 1e-10);
+    }
+}

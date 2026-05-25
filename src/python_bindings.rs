@@ -396,15 +396,69 @@ impl PyStereoEstimator {
     }
 }
 
-#[derive(Clone, FromPyObject)]
+#[pyclass(name = "EstimatorParameters", from_py_object)]
+#[derive(Clone)]
 pub struct PyEstimatorParameters {
+    #[pyo3(get, set)]
     pub tracker_optical_flow_levels: u32,
+    #[pyo3(get, set)]
     pub tracker_grid_size: u32,
+    #[pyo3(get, set)]
     pub keyframe_window_size: usize,
+    #[pyo3(get, set)]
     pub epipolar_error_threshold: f32,
+    #[pyo3(get, set)]
     pub translation_threshold: f64,
+    #[pyo3(get, set)]
     pub rotation_threshold: f64,
+    #[pyo3(get, set)]
     pub max_frames_between_keyframes: u64,
+}
+
+#[pymethods]
+impl PyEstimatorParameters {
+    #[new]
+    #[pyo3(signature = (
+        tracker_optical_flow_levels = 5,
+        tracker_grid_size = 16,
+        keyframe_window_size = 7,
+        epipolar_error_threshold = 0.005,
+        translation_threshold = 0.4,
+        rotation_threshold = 0.25,
+        max_frames_between_keyframes = 10,
+    ))]
+    fn new(
+        tracker_optical_flow_levels: u32,
+        tracker_grid_size: u32,
+        keyframe_window_size: usize,
+        epipolar_error_threshold: f32,
+        translation_threshold: f64,
+        rotation_threshold: f64,
+        max_frames_between_keyframes: u64,
+    ) -> Self {
+        Self {
+            tracker_optical_flow_levels,
+            tracker_grid_size,
+            keyframe_window_size,
+            epipolar_error_threshold,
+            translation_threshold,
+            rotation_threshold,
+            max_frames_between_keyframes,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "EstimatorParameters(tracker_optical_flow_levels={}, tracker_grid_size={}, keyframe_window_size={}, epipolar_error_threshold={}, translation_threshold={}, rotation_threshold={}, max_frames_between_keyframes={})",
+            self.tracker_optical_flow_levels,
+            self.tracker_grid_size,
+            self.keyframe_window_size,
+            self.epipolar_error_threshold,
+            self.translation_threshold,
+            self.rotation_threshold,
+            self.max_frames_between_keyframes,
+        )
+    }
 }
 
 impl From<PyEstimatorParameters> for EstimatorParameters {
@@ -424,5 +478,6 @@ impl From<PyEstimatorParameters> for EstimatorParameters {
 #[pymodule]
 pub fn toy_vo(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyStereoEstimator>()?;
+    m.add_class::<PyEstimatorParameters>()?;
     Ok(())
 }

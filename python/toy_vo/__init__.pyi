@@ -4,7 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-class EstimatorParameters(TypedDict):
+class EstimatorParameters:
     tracker_optical_flow_levels: int
     tracker_grid_size: int
     keyframe_window_size: int
@@ -12,6 +12,18 @@ class EstimatorParameters(TypedDict):
     translation_threshold: float
     rotation_threshold: float
     max_frames_between_keyframes: int
+
+    def __init__(
+        self,
+        tracker_optical_flow_levels: int = 5,
+        tracker_grid_size: int = 16,
+        keyframe_window_size: int = 7,
+        epipolar_error_threshold: float = 0.005,
+        translation_threshold: float = 0.4,
+        rotation_threshold: float = 0.25,
+        max_frames_between_keyframes: int = 10,
+    ) -> None: ...
+    def __repr__(self) -> str: ...
 
 
 class ProcessFrameResult(TypedDict):

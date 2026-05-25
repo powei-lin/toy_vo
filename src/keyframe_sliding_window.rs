@@ -64,3 +64,74 @@ impl KeyframeSlidingWindow {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn make_frame(new_point_ids: Vec<usize>) -> Frame {
+        let mut cam0_obs = HashMap::new();
+        let mut cam1_obs = HashMap::new();
+        for &id in &new_point_ids {
+            cam0_obs.insert(id, (id as f32 * 0.1, id as f32 * 0.2));
+            cam1_obs.insert(id, (id as f32 * 0.1 - 0.01, id as f32 * 0.2));
+        }
+        Frame::new(na::Isometry3::identity(), cam0_obs, cam1_obs, new_point_ids)
+    }
+
+    #[test]
+    fn test_new_sliding_window() {
+        let sw = KeyframeSlidingWindow::new(5);
+        assert_eq!(sw.max_size, 5);
+        assert!(sw.keyframes.is_empty());
+        assert!(!sw.is_full());
+    }
+
+    #[test]
+    fn test_add_keyframe_below_capacity() {
+        let mut sw = KeyframeSlidingWindow::new(3);
+        let result = sw.add_keyframe(make_frame(vec![1, 2, 3]));
+        assert!(result.is_none());
+        assert_eq!(sw.keyframes.len(), 1);
+        assert!(!sw.is_full());
+    }
+
+    #[test]
+    fn test_add_keyframe_at_capacity_marginalizes() {
+        let mut sw = KeyframeSlidingWindow::new(2);
+        // First keyframe with landmarks 1,2,3
+        sw.add_keyframe(make_frame(vec![1, 2, 3]));
+        // Second keyframe also observes landmark 1,2,3
+        sw.add_keyframe(make_frame(vec![4, 5]));
+        assert!(sw.is_full());
+        // Third keyframe should marginalize the first
+        // Only landmarks also seen in the new oldest frame are kept
+        let result = sw.add_keyframe(make_frame(vec![6]));
+        assert!(result.is_some());
+        let (_pose, removed_ids) = result.unwrap();
+        // Landmarks 1,2,3 were owned by the first frame; check which were removed
+        assert!(!removed_ids.is_empty());
+    }
+
+    #[test]
+    fn test_last_keyframe_t_cam0_w_empty() {
+        let sw = KeyframeSlidingWindow::new(3);
+        let pose = sw.last_keyframe_t_cam0_w();
+        assert_eq!(pose, na::Isometry3::identity());
+    }
+
+    #[test]
+    fn test_last_keyframe_t_cam0_w_with_frames() {
+        let mut sw = KeyframeSlidingWindow::new(3);
+        let mut frame = make_frame(vec![1]);
+        let expected_pose = na::Isometry3::new(
+            na::Vector3::new(1.0, 2.0, 3.0),
+            na::Vector3::new(0.1, 0.2, 0.3),
+        );
+        frame.t_cam0_w = expected_pose;
+        sw.add_keyframe(frame);
+        let pose = sw.last_keyframe_t_cam0_w();
+        assert!((pose.translation.vector - expected_pose.translation.vector).norm() < 1e-6);
+    }
+}

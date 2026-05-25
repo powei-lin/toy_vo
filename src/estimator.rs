@@ -415,3 +415,63 @@ impl StereoEstimator {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_estimator_parameters_default() {
+        let params = EstimatorParameters::default();
+        assert_eq!(params.tracker_optical_flow_levels, 5);
+        assert_eq!(params.tracker_grid_size, 16);
+        assert_eq!(params.keyframe_window_size, 7);
+        assert!((params.epipolar_error_threshold - 0.005).abs() < 1e-6);
+        assert!((params.translation_threshold - 0.4).abs() < 1e-6);
+        assert!((params.rotation_threshold - 0.25).abs() < 1e-6);
+        assert_eq!(params.max_frames_between_keyframes, 10);
+    }
+
+    #[test]
+    fn test_triangulate_points_identity_extrinsics() {
+        // Camera 1 is shifted 1m to the right of camera 0
+        let t_1_0 = na::SMatrix::<f32, 3, 4>::new(
+            1.0, 0.0, 0.0, 1.0, // rotation = identity, tx = 1.0
+            0.0, 1.0, 0.0, 0.0, // ty = 0
+            0.0, 0.0, 1.0, 0.0, // tz = 0
+        );
+        // Point at (0, 0, 10) in cam0 frame -> normalized (0, 0, 1)
+        // In cam1 frame the point is at (-1, 0, 10) -> normalized (-0.1, 0, 1)
+        let pt0 = na::Vector3::new(0.0, 0.0, 1.0);
+        let pt1 = na::Vector3::new(-0.1, 0.0, 1.0);
+
+        let result = triangulate_points(&pt0, &pt1, t_1_0.as_view());
+        // SVD may return negated result; check absolute depth and ratios
+        let depth = result.z.abs();
+        assert!((depth - 10.0).abs() < 0.1, "depth={}", depth);
+        assert!((result.x / result.z).abs() < 0.01, "x/z={}", result.x / result.z);
+        assert!((result.y / result.z).abs() < 0.01, "y/z={}", result.y / result.z);
+    }
+
+    #[test]
+    fn test_triangulate_points_known_geometry() {
+        // Baseline of 0.5m along x
+        let t_1_0 = na::SMatrix::<f32, 3, 4>::new(
+            1.0, 0.0, 0.0, 0.5, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+        );
+        // Point at (1, 2, 5) in cam0
+        let depth = 5.0_f32;
+        let pt0 = na::Vector3::new(1.0 / depth, 2.0 / depth, 1.0);
+        // In cam1: (1 - 0.5, 2, 5) -> normalized
+        let pt1 = na::Vector3::new(0.5 / depth, 2.0 / depth, 1.0);
+
+        let result = triangulate_points(&pt0, &pt1, t_1_0.as_view());
+        // Check ratios (sign may be flipped by SVD)
+        let sign = result.z.signum();
+        assert!((sign * result.x - 1.0).abs() < 0.01, "x={}", sign * result.x);
+        assert!((sign * result.y - 2.0).abs() < 0.01, "y={}", sign * result.y);
+        assert!((sign * result.z - 5.0).abs() < 0.01, "z={}", sign * result.z);
+    }
+}
