@@ -13,7 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 import cv2
 import rerun as rr
-from toy_vo import StereoEstimator
+from toy_vo import StereoEstimator, EstimatorParameters
 
 
 def id_to_color(feature_id: int) -> list[int]:
@@ -82,6 +82,11 @@ def load_camera_images(root: str, cam_idx: int) -> list[str]:
     """Load sorted list of image paths for a given camera."""
     pattern = str(Path(root) / f"mav0/cam{cam_idx}/data/*.png")
     paths = sorted(glob.glob(pattern))
+    if not paths:
+        pattern = str(Path(root) / f"mav0/cam{cam_idx}/data/*.jpg")
+        paths = sorted(glob.glob(pattern))
+        if not paths:
+            raise ValueError(f"No images found for camera {cam_idx} in {root}")
     return paths
 
 
@@ -104,7 +109,6 @@ def pose_to_rerun_transform(pose_4x4: NDArray) -> "rr.Transform3D":
     quat = Rotation.from_matrix(rot_mat).as_quat()  # [x, y, z, w]
     translation = pose_4x4[:3, 3]
 
-
     return rr.Transform3D.from_translation_rotation(
         translation=translation.tolist(),
         rotation=rr.Quaternion(xyzw=quat.tolist()),
@@ -113,8 +117,12 @@ def pose_to_rerun_transform(pose_4x4: NDArray) -> "rr.Transform3D":
 
 def log_rerun_image(image: NDArray, entity_path: str):
     """Log a grayscale image to rerun as encoded JPEG."""
-    _, buf = cv2.imencode(".jpg", image)  # Ensure OpenCV is used to encode (for consistency)
-    rr.log(entity_path, rr.EncodedImage(contents=buf.tobytes(), media_type="image/jpeg"))
+    _, buf = cv2.imencode(
+        ".jpg", image
+    )  # Ensure OpenCV is used to encode (for consistency)
+    rr.log(
+        entity_path, rr.EncodedImage(contents=buf.tobytes(), media_type="image/jpeg")
+    )
 
 
 def log_image_keypoints(
@@ -162,8 +170,11 @@ def log_pose(
     camera_frustum=None,
 ):
     """Log a 3D pose (transform + axes or camera frustum)."""
-    
-    rr.log(entity_path, rr.Transform3D(translation=pose_4x4[:3, 3], mat3x3=pose_4x4[:3, :3]))
+
+    rr.log(
+        entity_path,
+        rr.Transform3D(translation=pose_4x4[:3, 3], mat3x3=pose_4x4[:3, :3]),
+    )
     if camera_frustum is not None:
         rr.log(entity_path, camera_frustum)
     else:
@@ -286,12 +297,18 @@ def main():
         cam1_height=cam1_h,
         t_cam1_cam0_rvec=rvec,
         t_cam1_cam0_tvec=tvec,
+        params=EstimatorParameters(
+            tracker_optical_flow_levels=8,
+            tracker_grid_size=30,
+            translation_threshold=2.0,
+        ),
     )
 
     # Setup rerun
     camera_frustum = None
     if args.rerun:
         import rerun as rr
+
         rr.init("vo")
         rr.spawn(port=9875)
         camera_frustum = make_camera_frustum(cam0_matrix, cam0_w, cam0_h)
@@ -300,12 +317,10 @@ def main():
     # Load images
     left_images = load_camera_images(args.dataset_folder, 0)
     right_images = load_camera_images(args.dataset_folder, 1)
-
     assert len(left_images) == len(right_images) and len(left_images) > 0, (
         "Mismatched or empty camera images"
     )
     print(f"Found {len(left_images)} stereo image pairs")
-
 
     prev_points0: dict[int, tuple[float, float]] = {}
     prev_points1: dict[int, tuple[float, float]] = {}
@@ -322,7 +337,6 @@ def main():
         curr_points1 = curr_points["cam1"]
 
         if args.rerun:
-
             # Set timeline
             timestamp_ns = 0
             try:
@@ -330,8 +344,9 @@ def main():
                 timestamp_ns = int(stem)
             except ValueError:
                 pass
-
-            if timestamp_ns == 0:
+            if (
+                timestamp_ns < 1262304000000000000
+            ):  # If timestamp is before 2010, assume it's a frame index instead
                 rr.set_time("frame", sequence=i)
             else:
                 rr.set_time("epoch_time", timestamp=timestamp_ns / 1e9)
@@ -381,9 +396,7 @@ def main():
                         None,
                     )
 
-                log_old_landmarks(
-                    estimator.removed_good_landmarks, "/old_landmarks"
-                )
+                log_old_landmarks(estimator.removed_good_landmarks, "/old_landmarks")
                 log_trajectory(estimator.keyframe_trajectory, "/trajectory")
 
         prev_points0 = curr_points0
